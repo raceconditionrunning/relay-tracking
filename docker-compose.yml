@@ -1,0 +1,57 @@
+version: '3'
+
+services:
+  mosquitto:
+    container_name: mosquitto
+    image: eclipse-mosquitto:2
+    volumes:
+      - ./volumes/mosquitto/config:/mosquitto/config/
+      - ./volumes/mosquitto/log:/mosquitto/log/
+      - ./volumes/mosquitto/data:/mosquitto/data/
+      - ${CERT_PATH}/fullchain.pem:/mosquitto/certs/fullchain.pem
+      - ${CERT_PATH}/privkey.pem:/mosquitto/certs/privkey.pem
+      - ${CERT_PATH}/cert.pem:/mosquitto/certs/cert.pem
+    ports:
+#     - 1883:1883 # Only if you want public non-TLS connections
+      - 8883:8883
+      - 9001:9001 # Direct MQTT websocket support
+    restart: unless-stopped
+  owntracks-recorder:
+    container_name: owntracks-recorder
+    image: owntracks/recorder
+    depends_on:
+      mosquitto:
+        condition: service_started
+    environment:
+      - OTR_PORT=1883  # Use unencrypted connection within container network. 0 disables MQTT
+      - OTR_HOST=mosquitto
+      - OTR_CLIENTID=owntracks
+      - OTR_USER=owntracks
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./volumes/owntracks-recorder/config:/config
+      - ./volumes/owntracks-recorder/store:/store
+      - ${CERT_PATH}/fullchain.pem:/certs/fullchain.pem
+      - ${CERT_PATH}/privkey.pem:/certs/privkey.pem
+      - ${CERT_PATH}/cert.pem:/certs/cert.pem
+    ports:
+      - 8083:8083
+    restart: unless-stopped
+  forward-gps-tracker:
+    container_name: forward-gps-tracker
+    image: forward-gps-tracker
+    profiles:
+      - forwarder
+    depends_on:
+      mosquitto:
+        condition: service_started
+    environment:
+      - PYTHONUNBUFFERED=1
+      - FORWARD_MQTT_HOST=mosquitto
+      - FORWARD_MQTT_PORT=1883
+      - FORWARD_USERNAME=${FORWARD_USERNAME}
+      - FORWARD_PASSWORD=${FORWARD_PASSWORD}
+      - FORWARD_MQTT_USERNAME=${FORWARD_MQTT_USERNAME}
+      - FORWARD_MQTT_PASSWORD=${FORWARD_MQTT_PASSWORD}
+      - FORWARD_MQTT_TOPIC=owntracks/runnertracker
+    restart: unless-stopped
